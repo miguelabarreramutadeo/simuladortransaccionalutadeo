@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns:th="https://www.thymeleaf.org">
+	<head>
+		<title>Home</title>
+    	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+		
+		<link rel="shortcut icon" href="#">
+		<link rel="stylesheet" type="text/css" media="all" href="../../css/bootstrap.css"/>
+		<script src="../../js/bootstrap.js"></script>
+		<script src="../../js/jquery-3.6.0.min.js"></script> 
+		
+		<script type="text/javascript">
+			$(document).ready(function(){
+				$('#navBarWelcomePage a').addClass('active');
+			});
+		</script>
+	</head>
+	<body>
+		<div th:replace="~{/menu}">&nbsp;</div>
+		<main class="col-md-9 ms-sm-auto col-lg-10 px-md-0">
+			<div class="col-12 text-center mt-1">
+				<blockquote class="blockquote align-self-center">
+					<h3>Welcome</h3>
+				</blockquote>
+			</div>
+		</main> 
+	</body>
+</html>

@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html xmlns:th="https://www.thymeleaf.org" lang="eu">
+	<head>
+		<title>ISO Message Templates</title>
+		
+		<link rel="shortcut icon" href="#">
+		<link rel="stylesheet" type="text/css" media="all" href="../../css/bootstrap.css"/>
+		<script src="../../js/jquery-3.6.0.min.js"></script> 
+		<script src="../../js/bootstrap.js"></script>
+		<script type="text/javascript" charset="utf8" src="../../plugins/datatables/datatables.js"></script>
+	    <link rel="stylesheet" type="text/css" href="../../plugins/datatables/datatables.css">
+	    <link rel="stylesheet" type="text/css" href="../../css/dataTables.bootstrap4.min.css">
+
+		<script>
+			
+			$(document).ready( function() {
+				$('#navBarIsoMsgTpl a').addClass('active');
+				
+				let isoMsgTplId = -1;
+				let isToCopy = false;
+
+				$.ajax({
+					url: '/isotemplates/listTemplates',
+					type: 'GET',
+					processData: true, 
+					contentType: 'application/json',
+					dataType: 'json',
+					success: function(data, status, jqHXR) {
+						$('#templateIdModal option').remove();
+						$('#templateIdModal').append('<option selected></option>');
+						$.each(data.ltObjs, function (index, isoTemplate){
+							$('#templateIdModal').append('<option value="' + isoTemplate.isoTemplateId +'">' + isoTemplate.isoTemplateName + '</option>');
+						});
+					}
+				});
+				
+				//TOASTS
+				let st = document.getElementById('successToast');
+				let successToast = bootstrap.Toast.getOrCreateInstance(st);
+				let ft = document.getElementById('failedToast');
+				let failedToast = bootstrap.Toast.getOrCreateInstance(ft);
+				
+				let isoMsgTplTable = $('#isoMsgTplTable').DataTable({
+					ajax: {
+						url: 'isomsgtpls/listMsgTpls',
+						type: 'GET',
+						dataSrc: 'ltObjs'
+					},
+					idSrc: 'isoMsgTplId',
+					columns: [
+						{data: 'isoMsgTplName'},
+						{data: 'isoMsgType'},
+						{
+							data: 'isoTemplateId',
+							render: function(data, type, row) {
+								return row.isoTemplateId.isoTemplateName;
+							}
+						},
+						{data: 'isoMsgDesc'},
+						{
+							data: 'isoMsgVsby',
+							render: function(data, type, row) {
+								return ('U' === data) ? 'Only Me' : 'Anyone';
+							}
+						},
+						{
+							data: 'updatedBy',
+							render: function(data, type, row) {
+								return row.updatedBy.userName;
+							}
+						},
+						{
+							data: 'lastUpdated',
+							render: function(data, type, row) {
+								if (undefined === data || null === data || '' === data)
+									return '';
+								return new Date(data).toLocaleString();
+							}
+						}
+					]
+				});
+				
+				let isoMsgFldsTplTable = $('#isoMsgFldsTplTable').DataTable({
+					ajax: {
+						url: '/isomsgfldstpl/getMsgTplFlds',
+						type: 'GET',
+						dataSrc: 'ltObjs',
+						data: function(d) {
+							d.isoMsgTplId = isoMsgTplId
+						}
+					}, 
+					idSrc: 'isoMsgFldsTplId',
+					columns: [
+						{
+							data: 'isoFieldId',
+							render: function(data, type, row) {
+								return addLabel(row.isoFieldId);
+							}
+						},
+						{
+							data: 'isoFieldId',
+							render: function(data, type, row) {
+								return row.isoFieldId.isoFieldName;
+							}
+						},
+						{data: 'required'},
+						{data: 'valAuto'},
+						{data: 'valFixed'},
+						{data: 'isoMsgFldsTplVal'}
+					]
+				});
+				
+				$('#isoMsgTplTable tbody').on('click', 'tr', function() {
+					if ($(this).hasClass('selected')) {
+			            $(this).removeClass('selected');
+			            enableAndDisableButtons([], ['editMsgTpl', 'deleteMsgTpl', 'addMsgFld', 'editMsgFld', 'removeMsgFld', 'copyFlds', 'copyMsgTpl']);
+						isoMsgTplId = -1;
+					} else {
+						isoMsgTplTable.$('tr.selected').removeClass('selected');
+			            $(this).addClass('selected');
+			            enableAndDisableButtons(['editMsgTpl', 'deleteMsgTpl', 'addMsgFld', 'copyFlds', 'copyMsgTpl'], ['editMsgFld', 'removeMsgFld']); 
+			            
+			            let isoMsgTpl = isoMsgTplTable.row('.selected').data();
+			            isoMsgTplId = isoMsgTpl.isoMsgTplId;
+			            let isoTemplateId = isoMsgTpl.isoTemplateId.isoTemplateId;
+			            
+			            $.ajax({
+							url: '/isofields/getTemplateFields',
+							type: 'GET',
+							processData: true, 
+							contentType: 'application/x-www-form-urlencoded',
+							data: {'isoTemplateId': isoTemplateId},
+							success: function(data, status, jqHXR) {
+								$('#isoFieldIdModal option').remove();
+								$('#isoFieldIdModal').append('<option selected></option>');
+								$.each(data.ltObjs, function (index, isoField){
+									$('#isoFieldIdModal').append('<option value="' + isoField.isoFieldId +'">' + addLabel(isoField) + ' - ' + isoField.isoFieldName + '</option>');
+								});
+							}
+						});
+			            
+			            isoMsgFldsTplTable.ajax.reload();
+					}
+				});
+				
+				$('#isoMsgFldsTplTable tbody').on('click', 'tr', function() {
+					if ($(this).hasClass('selected')) {
+			            $(this).removeClass('selected');
+			            enableAndDisableButtons(['addMsgFld'], ['editMsgFld', 'removeMsgFld']);
+					} else {
+						isoMsgFldsTplTable.$('tr.selected').removeClass('selected');
+			            $(this).addClass('selected');
+			            enableAndDisableButtons(['editMsgFld', 'removeMsgFld'], []); 
+					}
+				});
+				
+				let modalMsgTpl = document.getElementById('msgTplModal');
+			    let msgTplModal = new bootstrap.Modal(modalMsgTpl);
+				let fInput = document.getElementById('tplNameModal');
+				
+				modalMsgTpl.addEventListener('show.bs.modal', function() {
+				  let form = $('#formMsgTplModal')[0];
+				  form.classList.remove('was-validated');
+				  fInput.focus();
+				  
+				  form.reset();
+				  
+				  let button = event.relatedTarget;
+				  
+				  if (null === button || typeof button == 'undefined')
+					  return;
+				  
+				  let action = button.getAttribute('data-bs-action');
+				  let modalTitle = modalMsgTpl.querySelector('.modal-title');
+				  
+				  if (action === 'add') {
+					  modalTitle.textContent = "Add Message Template";
+					  $('#isoMsgTplTable tr').removeClass('selected');
+				  } else if (action === 'edit')
+					  modalTitle.textContent = "Edit Message Template";
+				  else
+					  modalTitle.textContent = "Copy Message Template";
+				  
+				});
+				
+				let modalMsgFldsTpl = document.getElementById('msgFldsTplModal');
+			    let msgFldsTplModal = new bootstrap.Modal(modalMsgFldsTpl);
+				let fFldInput = document.getElementById('isoFieldIdModal');
+				
+				modalMsgFldsTpl.addEventListener('show.bs.modal', function() {
+				  let form = $('#formMsgFldsTplModal')[0];
+				  form.classList.remove('was-validated');
+				  fFldInput.focus();
+				  
+				  form.reset();
+				  
+				  let button = event.relatedTarget;
+				  
+				  if (null === button || typeof button == 'undefined')
+					  return;
+				  
+				  let action = button.getAttribute('data-bs-action');
+				  let modalTitle = modalMsgFldsTpl.querySelector('.modal-title');
+				  
+				  if (action === 'add') {
+					  modalTitle.textContent = "Add Field Message";
+					  $('#isoMsgFldsTplTable tr').removeClass('selected');
+				  } else
+					  modalTitle.textContent = "Edit Field Message";
+				  
+				});
+				
+				$('#btnSaveMsgTplModal').click(function() {
+					let form = $('#formMsgTplModal')[0];
+					if (form.checkValidity()) {
+// 						form.classList.add('was-validated');
+				    	
+						let objJson = {
+							'isoMsgTplName': getValue('tplNameModal', ''),
+							'isoTemplateId': {'isoTemplateId': $('#templateIdModal option:selected').val()},
+							'isoMsgType': $('#msgTypeModal option:selected').val(),
+							'isoMsgDesc': getValue('msgTypeDescModal', ''),
+							'isoMsgVsby': $('#msgTplTypeVisibilityModal option:selected').val()
+						}
+						
+						let currentSelection = isoMsgTplTable.row('.selected').data();
+
+						if (null !== currentSelection && 'undefined' !== typeof currentSelection && !isToCopy) {
+							objJson['isoMsgTplId'] = currentSelection.isoMsgTplId;
+							objJson['isoMsgTplOwner'] = currentSelection.isoMsgTplOwner;
+						} else if (isToCopy) {
+							objJson['isoMsgTplBsOn'] = {'isoMsgTplId': currentSelection.isoMsgTplId};
+							isToCopy = false;
+						}
+				    	
+						$.ajax({
+							url: 'isomsgtpls/saveMsgTpl',
+							type: 'POST',
+							processData: false,
+							contentType: 'application/json',
+							dataType: 'json',
+							data: JSON.stringify(objJson),
+							complete: function(data, status, jqXHR) {
+								isoMsgTplTable.ajax.reload();
+								isoMsgFldsTplTable.ajax.reload();
+								$('#btnCloseMsgTplModal').click();
+							},
+							success: function(data, status, jqXHR) {
+								successToast.show();
+							},
+							error: function(data, status, jqXHR) {
+								failedToast.show();
+							} 
+						});
+						return false;
+					}
+				});
+				
+				$('#copyMsgTpl').click(function() {
+					let baseOn = isoMsgTplTable.row('.selected').data();	
+					if (null !== baseOn && 'undefined' !== typeof baseOn) {
+						$('#tplNameModal').val('Copy of ' + baseOn.isoMsgTplName);
+						$('#templateIdModal').val(baseOn.isoTemplateId.isoTemplateId);
+						$('#msgTypeModal').val(baseOn.isoMsgType);
+						$('#msgTypeDescModal').val('Copy of ' + baseOn.isoMsgDesc);
+						$('#msgTplTypeVisibilityModal').val(baseOn.isoMsgVsby);
+						isToCopy = true;
+					}
+				});
+				
+				$('#editMsgTpl').click(function() {
+					let baseOn = isoMsgTplTable.row('.selected').data();	
+					if (null !== baseOn && 'undefined' !== typeof baseOn) {
+						$('#tplNameModal').val(baseOn.isoMsgTplName);
+						$('#templateIdModal').val(baseOn.isoTemplateId.isoTemplateId);
+						$('#msgTypeModal').val(baseOn.isoMsgType);
+						$('#msgTypeDescModal').val(baseOn.isoMsgDesc);
+						$('#msgTplTypeVisibilityModal').val(baseOn.isoMsgVsby);
+					}
+				});
+				
+				$('#isoMsgTplIsValAutoModal').change(function() {
+					setFieldValueRequired();
+				});
+				
+				$('#isoMsgTplIsValFixedModal').change(function() {
+					setFieldValueRequired();
+				});
+				
+				$('#btnSaveMsgFldTplModal').click(function() {
+					let form = $('#formMsgFldsTplModal')[0];
+					if (form.checkValidity()) {
+						form.classList.add('was-validated');
+						
+						let objJson = {
+							'isoMsgTplId': {'isoMsgTplId': isoMsgTplId},
+							'isoFieldId': {'isoFieldId': $('#isoFieldIdModal option:selected').val()},
+							'valAuto': $('#isoMsgTplIsValAutoModal option:selected').val(),
+							'valFixed': $('#isoMsgTplIsValFixedModal option:selected').val(),
+							'required': $('#isoMsgTplIsRequiredModal option:selected').val(),
+							'isoMsgFldsTplVal': getValue('isoMsgFldsTplValModal', '')
+						}
+						
+						let currentSelection = isoMsgFldsTplTable.row('.selected').data();
+						
+						if (null !== currentSelection && 'undefined' !== typeof currentSelection) {
+							objJson['isoMsgFldsTplId'] = currentSelection.isoMsgFldsTplId;
+						}
+				    	
+						$.ajax({
+							url: '/isomsgfldstpl/saveFldTpl',
+							type: 'POST',
+							processData: false,
+							contentType: 'application/json',
+							dataType: 'json',
+							data: JSON.stringify(objJson),
+							complete: function(data, status, jqXHR) {
+								isoMsgFldsTplTable.ajax.reload();
+								$('#btnCloseMsgFldsTplModal').click();
+							},
+							success: function(data, status, jqXHR) {
+								successToast.show();
+							},
+							error: function(data, status, jqXHR) {
+								failedToast.show();
+							} 
+						});
+					}
+				});
+				
+				$('#deleteMsgTpl').click(function() {
+					let isoMsgTpl = isoMsgTplTable.row('.selected').data();
+					if (null !== isoMsgTpl && 'undefined' !== typeof isoMsgTpl) {
+						$.ajax({
+							url: '/isomsgtpls/removeMsgTpl',
+							type: 'DELETE',
+							processData: false,
+							contentType: 'application/json',
+							dataType: 'json',
+							data: JSON.stringify(isoMsgTpl),
+							complete: function(data, status, jqXHR) {
+								isoMsgTplTable.ajax.reload();
+								isoMsgFldsTplTable.ajax.reload();
+								successToast.show();
+							} 
+						});
+					}
+				});
+				
+				$('#editMsgFld').click(function() {
+					let isoMsgFldTpl = isoMsgFldsTplTable.row('.selected').data();
+					if (null !== isoMsgFldTpl && 'undefined' !== typeof isoMsgFldTpl) {
+						$('#isoFieldIdModal').val(isoMsgFldTpl.isoFieldId.isoFieldId);
+						$('#isoMsgTplIsValAutoModal').val(isoMsgFldTpl.valAuto + '');
+						$('#isoMsgTplIsValFixedModal').val(isoMsgFldTpl.valFixed + '');
+						$('#isoMsgFldsTplValModal').val(isoMsgFldTpl.isoMsgFldsTplVal);
+						$('#isoMsgTplIsRequiredModal').val(isoMsgFldTpl.required + '');
+						setFieldValueRequired();
+					}
+				});
+				
+				$('#removeMsgFld').click(function() {
+					let isoMsgFldTpl = isoMsgFldsTplTable.row('.selected').data();
+					console.log(isoMsgFldTpl);
+					if (null !== isoMsgFldTpl && 'undefined' !== typeof isoMsgFldTpl) {
+						$.ajax({
+							url: '/isomsgfldstpl/removeFldTpl',
+							type: 'DELETE',
+							processData: false,
+							contentType: 'application/json',
+							dataType: 'json',
+							data: JSON.stringify(isoMsgFldTpl),
+							complete: function(data, status, jqXHR) {
+								isoMsgFldsTplTable.ajax.reload();
+								successToast.show();
+							} 
+						});
+					}
+				});
+				
+				function setFieldValueRequired() {
+					let isoMsgTplIsValAutoModal = ('true' == $('#isoMsgTplIsValAutoModal option:selected').val());
+					let isoMsgTplIsValFixedModal = ('true' == $('#isoMsgTplIsValFixedModal option:selected').val());
+					if (isoMsgTplIsValAutoModal || isoMsgTplIsValFixedModal) {
+						$('#isoMsgFldsTplValModal').attr('required', true);
+						$('#isoMsgFldsTplValModal').attr('readonly', false);
+					} else {
+						$('#isoMsgFldsTplValModal').attr('required', false);
+						$('#isoMsgFldsTplValModal').attr('readonly', true);
+						$('#isoMsgFldsTplValModal').val('');
+					}
+				}
+				
+				function getValue(elementId, defaultValue) {
+					let value = $('#' + elementId).val();
+					if (typeof value !== 'undefined' && value !== '')
+						return value;
+					else 
+						return defaultValue;	
+				}
+				
+				function enableAndDisableButtons(enableBts, disableBts) {
+					enableBts.forEach(btn => {
+						$('#' + btn).removeClass('disabled');
+					});
+					disableBts.forEach(btn => {
+						$('#' + btn).addClass('disabled');
+					});
+				}
+				
+				function addLabel(isoField) {
+					let label = '';
+					if (null !== isoField.isoParentField) {
+						let parent = isoField.isoParentField;
+						label = addLabel(parent) + '.' + (isoField.isoFieldNr + '').padStart(howManyZerosAdd(parent.isoMaxValidField), "0");
+					} else {
+						let template = isoField.isoTemplateId;
+						label = (isoField.isoFieldNr + '').padStart(howManyZerosAdd(template.maxValidField), "0");
+					}
+					return label;
+				}
+				
+				function howManyZerosAdd(n) {
+				    let zerosCount = 0;
+				    let isDivisible = true;
+				    while(isDivisible) {
+				        if ((n / Math.pow(10, zerosCount)) >= 1) {
+				            zerosCount++;
+				        } else {
+				            isDivisible = false;
+				        }
+				    }
+				    return zerosCount;
+				}
+			});
+			let myConsole = {};
+		</script>
+		<style></style>
+	</head>
+	<body>
+		<div th:replace="~{/menu}">&nbsp;</div>
+		<main class="col-md-9 ms-sm-auto col-lg-10 px-md-0">
+			<div class="card">
+				<div class="card-header">ISO Message Templates</div>
+				<div class="card-body">
+					<table id="isoMsgTplTable" class="table table-striped table-hover">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Message Type</th>
+								<th>Iso Template</th>
+								<th>Description</th>
+								<th>Type Visibility</th>
+								<th>Updated By</th>
+								<th>Last Updated</th>
+							</tr>
+						</thead>
+					</table>
+					<div class="btn-group" role="group" aria-label="Options">
+						<button type="button" class="btn btn-outline-secondary" id="addMsgTpl" data-bs-toggle="modal" data-bs-target="#msgTplModal" data-bs-action="add">Add New Message Template</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="copyMsgTpl" data-bs-toggle="modal" data-bs-target="#msgTplModal" data-bs-action="copy">Copy Message Template</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="editMsgTpl" data-bs-toggle="modal" data-bs-target="#msgTplModal" data-bs-action="edit">Edit Message Template</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="deleteMsgTpl">Delete Message Template</button>
+					</div>
+				</div>
+			</div>
+			<br/>
+			<div class="card">
+				<div class="card-header">ISO Message's fields</div>
+				<div class="card-body">
+					<table id="isoMsgFldsTplTable" class="table table-striped table-hover">
+						<thead>
+							<tr>
+								<th>Field Nr</th>
+								<th>Name</th>
+								<th>Is Required?</th>
+								<th>Is Automatic Value?</th>
+								<th>Is Fixed Value?</th>
+								<th>Value</th>
+							</tr>
+						</thead>
+					</table>
+					<div class="btn-group" role="group" aria-label="Options">
+						<button type="button" class="btn btn-outline-secondary disabled" id="addMsgFld" data-bs-toggle="modal" data-bs-target="#msgFldsTplModal" data-bs-action="add">Add New Field</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="editMsgFld" data-bs-toggle="modal" data-bs-target="#msgFldsTplModal" data-bs-action="edit">Edit Field</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="removeMsgFld">Delete Field</button>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Modals -->
+			<!-- ISO Msg Tpl Modal -->
+			<div class="modal face" id="msgTplModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="ISO Message Template Modal" aria-hidden="true">
+				<div class="modal-dialog">
+					<div class="modal-content">
+						<form id="formMsgTplModal">
+							<div class="modal-header">
+								<h5 class="modal-title" id="titleMsgTplModal"></h5>
+								<button type="button" id="btnCloseMsgTplModal" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+							</div>
+							<div class="modal-body">
+									<div class="mb-3">
+										<label for="tplNameModal" class="col-form-label">Message Name:</label>
+										<input type="text" class="form-control" id="tplNameModal" required>
+										<div class="invalid-feedback">
+											Please choose a Message Name.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="templateIdModal" class="col-form-label">Iso Template:</label>
+										<select class="form-select" id="templateIdModal" required>
+										</select>
+										<div class="invalid-feedback">
+											Please choose a Iso Template.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="msgTypeModal" class="col-form-label">Message Type:</label>
+										<select class="form-select" id="msgTypeModal" required>
+											<option selected></option>
+											<option value="0100">0100/0101</option>
+											<option value="0110">0110</option>
+											<option value="0120">0120/0121</option>
+											<option value="0130">0130</option>
+											<option value="0200">0200/0201</option>
+											<option value="0210">0210</option>
+											<option value="0220">0220/0221</option>
+											<option value="0230">0230</option>
+											<option value="0320">0320/0321</option>
+											<option value="0330">0330</option>
+											<option value="0420">0420/0421</option>
+											<option value="0430">0430</option>
+											<option value="0600">0600/0601</option>
+											<option value="0610">0610</option>
+											<option value="0620">0620/0621</option>
+											<option value="0630">0630</option>
+											<option value="0800">0800/0801</option>
+											<option value="0810">0810</option>
+										</select>
+										<div class="invalid-feedback">
+											Please choose a Message Type.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="msgTypeDescModal" class="col-form-label">Description:</label>
+										<textarea class="form-control" id="msgTypeDescModal" rows="3"></textarea>
+									</div>
+									<div class="mb-3">
+										<label for="msgTplTypeVisibilityModal" class="col-form-label">Type Visibility:</label>
+										<select class="form-select" id="msgTplTypeVisibilityModal" required>
+											<option selected></option>
+											<option value="A">Anyone</option>
+											<option value="U">Only me</option>
+										</select>
+										<div class="invalid-feedback">
+											Please choose a Type Visibility.
+										</div>
+									</div>
+							</div>
+							<div class="modal-footer">
+								<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+								<button type="submit" class="btn btn-primary" id="btnSaveMsgTplModal">Save</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+			
+			<!-- ISO Msg Flds Tpl Modal -->
+			<div class="modal face" id="msgFldsTplModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="ISO Message Field Modal" aria-hidden="true">
+				<div class="modal-dialog">
+					<div class="modal-content">
+						<form id="formMsgFldsTplModal">
+							<div class="modal-header">
+								<h5 class="modal-title" id="titleMsgFldsTplModal"></h5>
+								<button type="button" id="btnCloseMsgFldsTplModal" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+							</div>
+							<div class="modal-body">
+									<div class="mb-3">
+										<label for="isoFieldIdModal" class="col-form-label">ISO Field:</label>
+										<select class="form-control" id="isoFieldIdModal" required></select>
+									</div>
+									<div class="mb-3">
+										<label for="isoMsgTplIsRequiredModal" class="col-form-label">Is Required?</label>
+										<select class="form-select" id="isoMsgTplIsRequiredModal" required>
+											<option selected></option>
+											<option value="true">Yes</option>
+											<option value="false">No</option>
+										</select>
+										<div class="invalid-feedback">
+											Please choose if is required field.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="isoMsgTplIsValAutoModal" class="col-form-label">Is Auto Value?</label>
+										<select class="form-select" id="isoMsgTplIsValAutoModal" required>
+											<option selected></option>
+											<option value="true">Yes</option>
+											<option value="false">No</option>
+										</select>
+										<div class="invalid-feedback">
+											Please choose if has an auto value.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="isoMsgTplIsValFixedModal" class="col-form-label">Is Fixed Value?</label>
+										<select class="form-select" id="isoMsgTplIsValFixedModal" required>
+											<option selected></option>
+											<option value="true">Yes</option>
+											<option value="false">No</option>
+										</select>
+										<div class="invalid-feedback">
+											Please choose if has a fixed value.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="isoMsgFldsTplValModal" class="col-form-label">Field Value:</label>
+										<input type="text" class="form-control" id="isoMsgFldsTplValModal">
+									</div>
+							</div>
+							<div class="modal-footer">
+								<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+								<button type="submit" class="btn btn-primary" id="btnSaveMsgFldTplModal">Save</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+			
+			<!-- OBSERVACION
+			Contemplar dejar los Toast en el home con un atributo variable para customizar los mensajes
+			 -->
+			<!-- Toast -->
+			<div class="toast-container position-absolute p-3 top-0 end-0" id="toastPlacement">
+				<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+				  <symbol id="check-circle-fill" fill="currentColor" viewBox="0 0 16 16">
+				    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+				  </symbol>
+				  <symbol id="info-fill" fill="currentColor" viewBox="0 0 16 16">
+				    <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+				  </symbol>
+				  <symbol id="exclamation-triangle-fill" fill="currentColor" viewBox="0 0 16 16">
+				    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+				  </symbol>
+				</svg>
+			
+				<!-- Toast de relleno -->
+				<div class="toast bg-primary align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true">
+					<div class="d-flex">
+						<div class="toast-body">
+							<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Success:"><use xlink:href="#check-circle-fill"/></svg>
+					  		The Message Template's information has been saved.
+						</div>
+					</div>
+				</div>
+				
+				<!-- Success Alert -->
+				<div class="toast bg-light align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true" id="successToast">
+					<div class="d-flex">
+						<div class="toast-body">
+							<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Success:"><use xlink:href="#check-circle-fill"/></svg>
+					  		The Message Template's information has been saved.
+						</div>
+					</div>
+				</div>
+				
+				<!-- Failed Alert -->
+				<div class="toast bg-warning align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true" id="failedToast">
+					<div class="d-flex">
+						<div class="toast-body">
+							<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Failed:"><use xlink:href="#exclamation-triangle-fill"/></svg>
+					  		An error has occurred trying saved the Message Template, please checked the data and try again.
+						</div>
+					</div>
+				</div>
+			</div>
+		</main>
+	</body>
+</html>

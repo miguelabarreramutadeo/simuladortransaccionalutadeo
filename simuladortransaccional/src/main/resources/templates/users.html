@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html xmlns:th="https://www.thymeleaf.org">
+	<head>
+		<title>Users</title>
+		
+		<link rel="shortcut icon" href="#">
+		<link rel="stylesheet" type="text/css" media="all" href="../../css/bootstrap.css"/>
+		<script src="../../js/jquery-3.6.0.min.js"></script> 
+		<script src="../../js/bootstrap.js"></script>
+
+		<script type="text/javascript" charset="utf8" src="../../plugins/datatables/datatables.js"></script>
+	    <link rel="stylesheet" type="text/css" href="../../plugins/datatables/datatables.css">
+	    <link rel="stylesheet" type="text/css" href="../../css/dataTables.bootstrap4.min.css">
+		
+		<script src="/js/user.js"></script>
+		
+		<script>
+		$(document).ready( function () {
+			$('#navBarUsers a').addClass('active');
+			
+			/**
+			** DATATABLE OPTIONS
+			**/
+			let table = $('#userTable').DataTable({
+				ajax: {
+					url: 'users/listUsers',
+					type: 'GET',
+					dataSrc: 'ltObjs'
+				},
+				idSrc: 'userId',
+				columns: [
+					{data: 'userName'},
+					{data: 'email'},
+					{
+						data: 'userState',
+						render: function (data, type, row) {
+							return (row.enabled) ? 'Active' : 'Inactive';
+						}
+					},
+					{
+						data: 'userType',
+						render: function (data, type, row) {
+							return row.roleId.roleName;
+						}
+					},
+					{
+						data: 'lastLogin',
+						render: function(data, type, row) {
+							if (undefined === data || null === data || '' === data)
+								return '';
+							return new Date(data).toLocaleString();
+						}
+					},
+					{
+						data: 'lastFailedLogin',
+						render: function(data, type, row) {
+							if (undefined === data || null === data || '' === data)
+								return '';
+							return new Date(data).toLocaleString();
+						}
+					},
+					{
+						data: 'lastUpdated',
+						render: function(data, type, row) {
+							if (undefined === data || null === data || '' === data)
+								return '';
+							return new Date(data).toLocaleString();
+						}
+					},
+					{
+						data: 'updatedBy',
+						render: function(data, type, row) {
+							let userName = 'System';
+							if (null !== row.updatedBy.userName)
+								userName = row.updatedBy.userName;
+							return userName;
+						}
+					}
+				]
+			});
+			
+			$('#userTable tbody').on('click', 'tr', function () {
+		        if ($(this).hasClass('selected')) {
+		            $(this).removeClass('selected');
+		            $('#editUser').addClass('disabled');
+		            $('#disableUser').addClass('disabled');
+		        } else {
+		            table.$('tr.selected').removeClass('selected');
+		            $(this).addClass('selected');
+		            $('#editUser').removeClass('disabled');
+		            $('#disableUser').removeClass('disabled');
+		        }
+		    });
+		 
+		    $('#editUser').click(function () {
+		    	let data = table.row('.selected').data();
+		    	if (typeof data === 'undefined' || null === data)
+		    		return;
+		    	
+		    	$('#userNameModal').val(data.userName);
+		    	$('#emailModal').val(data.email);
+		    	if (data.enabled)
+		    		$('#userStateModal').attr('checked', 'true');
+		    	if ('Administrator' === data.roleId.roleName)
+		    		$('#userTypeModal').attr('checked', 'true');
+		    });
+			
+		    
+		    /**
+		    **  MODALS OPTIONS
+		    **/
+			let modalUser = document.getElementById('userModal');
+		    let userModal = new bootstrap.Modal(modalUser);
+			let fInput = document.getElementById('userNameModal');
+			
+
+			//SHOW USER MODAL
+			modalUser.addEventListener('show.bs.modal', function () {
+			  let form = $('#formUserModal')[0];
+			  form.classList.remove('was-validated');
+			  fInput.focus();
+			  
+			  form.reset();
+			  $('#userStateModal').removeAttr('checked');
+			  $('#userTypeModal').removeAttr('checked');
+			  
+			  let button = event.relatedTarget;
+			  
+			  if (null === button || typeof button == 'undefined')
+				  return;
+			  
+			  let action = button.getAttribute('data-bs-action');
+			  let modalTitle = modalUser.querySelector('.modal-title');
+			  
+			  if (action === 'add') {
+				  modalTitle.textContent = "Add User";
+				  $('#userNameModal').removeAttr("readonly", "");
+			  } else {
+				  modalTitle.textContent = "Edit User";
+				  $('#userNameModal').attr("readonly", "true");
+			  }
+			});
+
+			//TOASTS
+			let st = document.getElementById('successToast');
+			let successToast = bootstrap.Toast.getOrCreateInstance(st);
+			let ft = document.getElementById('failedToast');
+			let failedToast = bootstrap.Toast.getOrCreateInstance(ft);
+			
+			/**
+			** BUTTON SAVE USER
+			**/
+			$('#btnSaveUserModal').click(function () {
+				let form = $('#formUserModal')[0];
+				if (form.checkValidity()) {
+// 					form.classList.add('was-validated');
+					$.ajax({
+						url: 'users/saveUser',
+						type: 'POST',
+						processData: false,
+						contentType: 'application/json',
+						dataType: 'json',
+						data: JSON.stringify({
+							"userName": $('#userNameModal').val(), 
+							"email": $('#emailModal').val(), 
+							"enabled": $('#userStateModal').is(':checked'), 
+							"roleId": {"roleId": ($('#userTypeModal').is(':checked') ? 1 : 2)}
+						}),
+						complete: function(data, status, jqXHR) {
+							table.ajax.reload();
+							$('#btnCloseUserModal').click();
+						},
+						success: function(data, status, jqXHR) {
+							successToast.show();
+						},
+						error: function(data, status, jqXHR) {
+							failedToast.show();
+						} 
+					});
+					return false;
+				}
+			});
+			
+			/**
+			** BUTTON DISABLE USER
+			**/
+			$('#disableUser').click(function () {
+				let data = table.row('.selected').data();
+		    	if (undefined === data || null === data)
+		    		return;
+		    	
+		    	$.ajax({
+		    		url: '/users/saveUser',
+		    		type: 'POST',
+		    		processData: false, 
+		    		contentType: 'application/json',
+		    		dataType: 'json',
+		    		data: JSON.stringify({
+		    			"userName": data.userName, 
+						"email": data.email, 
+						"enabled": 0, 
+						"roleId": data.roleId
+		    		}),
+					complete: function(data, status, jqXHR) {
+						$('#disableUser').addClass('disabled');
+						table.ajax.reload();
+					},
+		    		success: function(data, status, jqXHR) {
+		    			successToast.show();
+		    		},
+					error: function(data, status, jqXHR) {
+						failedToast.show();
+					} 
+		    	});
+			});
+		} );
+		</script>
+		<style>
+		</style>
+	</head>
+	<body>
+		<div th:replace="~{/menu}">&nbsp;</div>
+		<main class="col-md-9 ms-sm-auto col-lg-10 px-md-0">
+			<div class="row">
+				<main class="col-md-12 ms-sm-auto col-lg-12 px-md-4 mt-4">
+					<table id="userTable" class="table table-striped table-hover">
+						<thead>
+							<tr>
+								<th>User Name</th>
+								<th>Email</th>
+								<th>State</th>
+								<th>User Type</th>
+								<th>Last Login</th>
+								<th>Last Failed Login</th>
+								<th>Last Updated</th>
+								<th>Updated by</th>
+							</tr>
+						</thead>
+					</table>
+					<div class="btn-group" role="group" aria-label="Options">
+						<button type="button" class="btn btn-outline-secondary" id="addUser" data-bs-toggle="modal" data-bs-target="#userModal" data-bs-action="add">Add New User</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="editUser" data-bs-toggle="modal" data-bs-target="#userModal" data-bs-action="edit">Edit User</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="disableUser">Disable User</button>
+					</div>
+				</main>
+			</div>
+		</main>
+		
+		<!-- Modals -->
+		<!-- User Modal -->
+		<div class="modal fade" id="userModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="User Modal" aria-hidden="true">
+				<div class="modal-dialog">
+					<div class="modal-content">
+						<form id="formUserModal">
+							<div class="modal-header">
+								<h5 class="modal-title" id="titleUserModal"></h5>
+								<button type="button" id="btnCloseUserModal" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+							</div>
+							<div class="modal-body">
+									<div class="mb-3">
+										<label for="userNameModal" class="col-form-label">Username:</label>
+										<input type="text" class="form-control" id="userNameModal" required>
+										<div class="invalid-feedback">
+											Please choose a username.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="emailModal" class="col-form-label">Email:</label>
+										<input type="email" class="form-control" id="emailModal" required>
+										<div class="invalid-feedback">
+											Please choose a email.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="userStateModal" class="col-form-label">User State:</label>
+										<div class="form-check form-switch">
+											<input class="form-check-input" type="checkbox" id="userStateModal" value="1">
+											<label class="form-check-label" for="userStateModal">Active</label>
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="userNameModal" class="col-form-label">User Type:</label>
+										<div class="form-check form-switch">
+											<input class="form-check-input" type="checkbox" id="userTypeModal" value="1">
+											<label class="form-check-label" for="userTypeModal">is Administrator?</label>
+										</div>
+									</div>
+							</div>
+							<div class="modal-footer">
+								<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+								<button type="submit" class="btn btn-primary" id="btnSaveUserModal">Save</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+			
+		<!-- Toast -->
+		<div class="toast-container position-absolute p-3 top-0 end-0" id="toastPlacement">
+			<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+			  <symbol id="check-circle-fill" fill="currentColor" viewBox="0 0 16 16">
+			    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+			  </symbol>
+			  <symbol id="info-fill" fill="currentColor" viewBox="0 0 16 16">
+			    <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+			  </symbol>
+			  <symbol id="exclamation-triangle-fill" fill="currentColor" viewBox="0 0 16 16">
+			    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+			  </symbol>
+			</svg>
+		
+			<!-- Toast de relleno -->
+			<div class="toast bg-primary align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true">
+				<div class="d-flex">
+					<div class="toast-body">
+						<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Success:"><use xlink:href="#check-circle-fill"/></svg>
+				  		The user's information has been saved.
+					</div>
+				</div>
+			</div>
+			
+			<!-- Success Alert -->
+			<div class="toast bg-light align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true" id="successToast">
+				<div class="d-flex">
+					<div class="toast-body">
+						<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Success:"><use xlink:href="#check-circle-fill"/></svg>
+				  		The user's information has been saved.
+					</div>
+				</div>
+			</div>
+			
+			<!-- Failed Alert -->
+			<div class="toast bg-warning align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true" id="failedToast">
+				<div class="d-flex">
+					<div class="toast-body">
+						<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Failed:"><use xlink:href="#exclamation-triangle-fill"/></svg>
+				  		An error has occurred trying saved the user, please checked the data and try again.
+					</div>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html xmlns:th="https://www.thymeleaf.org">
+	<head>
+		<title>Send Txs</title>
+		
+		<link rel="shortcut icon" href="#">
+		<link rel="stylesheet" type="text/css" media="all" href="../../css/bootstrap.css"/>
+		<script src="../../js/jquery-3.6.0.min.js"></script> 
+		<script src="../../js/bootstrap.js"></script>
+
+		<script type="text/javascript" charset="utf8" src="../../plugins/datatables/datatables.js"></script>
+	    <link rel="stylesheet" type="text/css" href="../../plugins/datatables/datatables.css">
+	    <link rel="stylesheet" type="text/css" href="../../css/dataTables.bootstrap4.min.css">
+		
+		<script src="/js/user.js"></script>
+		
+		<script>
+			$(document).ready( function () {
+				$('#navBarSendTx a').addClass('active');
+				
+				//TOASTS
+				let st = document.getElementById('successToast');
+				let successToast = bootstrap.Toast.getOrCreateInstance(st);
+				let ft = document.getElementById('failedToast');
+				let failedToast = bootstrap.Toast.getOrCreateInstance(ft);
+				
+				let isoMsgTplId = -1;
+				
+				let fieldsTable = $('#fieldsTable').DataTable({
+					ajax: {
+						url: 'isomsgfldstpl/getMsgTplFldsToSendTx',
+						type: 'GET',
+						dataSrc: 'ltObjs',
+						data: function(d) {
+							d.isoMsgTplId = isoMsgTplId
+						}
+					},
+					idSrc: 'isoMsgFldsTplId',
+					columns: [
+						{
+							data: 'isoFieldId',
+							render: function(data, type, row) {
+								return addLabel(row.isoFieldId);
+							}
+						},
+						{
+							data: 'isoFieldId',
+							render: function(data, type, row) {
+								return row.isoFieldId.isoFieldName;
+							}
+						},
+						{data: 'required'},
+						{
+							data: 'isoFieldId',
+							render: function(data, type, row) {
+								return row.isoFieldId.isoFieldClass + ' (' + row.isoFieldId.isoFieldLength + ')';
+							}
+						},
+						{
+							data: 'isoMsgFldsTplVal',
+							render: function(data, type, row) {
+								let required = (row.required) ? 'required' : '';
+								return '<input type="text" name="isoMsgFldsTplVal" value="' + row.isoMsgFldsTplVal + '" ' + 
+									required + 
+									' isomsgfldstplid="' + row.isoMsgFldsTplId + '" ' +
+									' isofieldid="' + row.isoFieldId.isoFieldId + '" ' + 
+									'/>';
+							}
+						}
+					]
+				});
+				myConsole = fieldsTable;
+				function addLabel(isoField) {
+					let label = '';
+					if (null !== isoField.isoParentField) {
+						let parent = isoField.isoParentField;
+						label = addLabel(parent) + '.' + (isoField.isoFieldNr + '').padStart(howManyZerosAdd(parent.isoMaxValidField), "0");
+					} else {
+						let template = isoField.isoTemplateId;
+						label = (isoField.isoFieldNr + '').padStart(howManyZerosAdd(template.maxValidField), "0");
+					}
+					return label;
+				}
+				
+				function howManyZerosAdd(n) {
+				    let zerosCount = 0;
+				    let isDivisible = true;
+				    while(isDivisible) {
+				        if ((n / Math.pow(10, zerosCount)) >= 1) {
+				            zerosCount++;
+				        } else {
+				            isDivisible = false;
+				        }
+				    }
+				    return zerosCount;
+				}
+				
+				$.ajax({
+					url: '/isonodes/listNodes',
+					type: 'GET',
+					processData: true,
+					contentType: 'application/json',
+					dataType: 'json',
+					success: function(data, status, jqHXR) {
+						$('#isoNodeId option').remove();
+						$('#isoNodeId').append('<option selected></option>');
+						$.each(data.ltObjs, function (index, isoNode){
+							if (isoNode.isoNodeIsStarted) {
+								$('#isoNodeId').append('<option value="' + isoNode.isoNodeId +'" more-information="' + isoNode.isoTemplateId.isoTemplateId + '?' + isoNode.isoTemplateId.isoTemplateName + '">' + isoNode.isoNodeName + ' (' + isoNode.isoNodeHost + ':' + isoNode.isoNodePort + ')'+ '</option>');
+							}
+						});
+					}
+				});
+				
+				$('#isoNodeId').change(function() {
+					$('#lbIsoTemplateId').val('');
+					$('#isoMsgTplId').val('');
+					$('#isoMsgTplId option').remove();
+					isoMsgTplId = -1;
+					fieldsTable.ajax.reload();
+					
+					let templateInfo = $('#isoNodeId option:selected').attr('more-information');
+					if (typeof templateInfo !== 'undefined') {
+						templateInfo = templateInfo.split("?");
+						$('#lbIsoTemplateId').val(templateInfo[1]);
+						
+						$.ajax({
+							url: 'isomsgtpls/listMsgTplsByTpl',
+							type: 'GET',
+							processData: false,
+							contentType: 'application/json',
+							dataType: 'json',
+							data: 'isoTemplateId=' + templateInfo[0],
+							success: function(data, status, jqXHR) {
+								$('#isoMsgTplId').append('<option selected></option>');
+								 data.ltObjs.forEach(function(element, index, array) {
+									 $('#isoMsgTplId').append('<option value="' + element.isoMsgTplId + '">' + element.isoMsgTplName + '</option>');
+								 });
+							}
+						})
+					}
+					
+					$('#isoMsgTplId').change(function() {
+						isoMsgTplId = $('#isoMsgTplId option:selected').val();
+						if('' == isoMsgTplId)
+							isoMsgTplId = -1;
+						fieldsTable.ajax.reload();
+					});
+				});
+				
+				$('#btnSendTx').click(function() {
+					let form = $('#isoMsgFldsTplToSendTxForm')[0];
+					if (form.checkValidity()) {
+						let ltObjs = [];
+						document.getElementsByName('isoMsgFldsTplVal').forEach(field => {
+							let isoMsgFldsTpl = {
+								'isoMsgFldsTplId': field.getAttribute('isomsgfldstplid'),
+								'isoMsgTplId': {'isoMsgTplId': $('#isoMsgTplId option:selected').val()},
+								'isoFieldId': {'isoFieldId': field.getAttribute('isofieldid')},
+								'isoMsgFldsTplVal': field.value
+							};
+							ltObjs[ltObjs.length] = isoMsgFldsTpl;
+						});
+						
+						
+						let objJson = {
+							'obj': {'isoNode': {'isoNodeId': $('#isoNodeId option:selected').val()}},
+							'ltObjs': ltObjs,
+							'length': ltObjs.length
+						}
+						
+						$.ajax({
+							url: '/sendtx/sendRequest',
+							type: 'POST',
+							processData: false,
+							contentType: 'application/json',
+							dataType: 'json',
+							data: JSON.stringify(objJson),
+							complete: function(data, status, jqXHR) {
+								console.log('data: ' + data);
+								console.log('status: ' + status);
+							}
+						});
+						return false;
+					} 
+					return false;
+				});
+			});
+			let myConsole = {};
+		</script>
+		<style>
+		</style>
+	</head>
+	<body>
+		<div th:replace="~{/menu}">&nbsp;</div>
+		<main class="col-md-9 ms-sm-auto col-lg-10 px-md-0">
+			<div class="card">
+				<div class="card-body">
+			<form id="isoMsgFldsTplToSendTxForm">
+					<div class="mb-3 row">
+						<label for="isoNodeId" class="col-sm-2 col-form-label">Choose Started Connection:</label>
+						<div class="col-sm-10">
+							<select class="form-select" id="isoNodeId">
+							</select>
+						</div>
+					</div>
+					<div class="mb-3 row">
+						<label for="lbIsoTemplateId" class="col-sm-2 col-form-label">Iso Template:</label>
+						<div class="col-sm-10">
+							<input type="text" readonly class="form-control-plaintext" id="lbIsoTemplateId"/>
+						</div>
+					</div>
+					<div class="mb-3 row">
+						<label for="isoMsgTplId" class="col-sm-2 col-form-label">Choose Message Template:</label>
+						<div class="col-sm-10">
+							<select class="form-select" id="isoMsgTplId">
+							</select>
+						</div>
+					</div>
+					<div class="mb-3">
+						<div class="card">
+							<div class="card-header">Fields</div>
+							<div class="card-body">
+<!-- 								<form id="isoMsgFldsTplToSendTxForm"> -->
+									<table id="fieldsTable" class="table table-striped table-hover">
+										<thead>
+											<tr>
+												<th>Field Nr</th>
+												<th>Field Name</th>
+												<th>Field Required</th>
+												<th>Field Type</th>
+												<th>Field Value</th>
+											</tr>
+										</thead>
+									</table>
+<!-- 								</form> -->
+							</div>
+						</div>
+					</div>
+					<div class="mb-3 row">
+						<label for="lbRspCode" class="col-sm-2 col-form-label">Response Code:</label>
+						<div class="col-sm-10">
+							<input type="text" readonly class="form-control-plaintext" id="lbRspCode"/>
+						</div>
+					</div>
+					<div class="mb-3 text-center">
+						<button type="button" class="btn btn-outline-secondary" id="btnSendTx">Send Transaction</button>
+					</div>
+					</form>
+				</div>
+			</div>
+		</main>
+
+		<!-- Toast -->
+		<div class="toast-container position-absolute p-3 top-0 end-0" id="toastPlacement">
+			<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+			  <symbol id="check-circle-fill" fill="currentColor" viewBox="0 0 16 16">
+			    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+			  </symbol>
+			  <symbol id="info-fill" fill="currentColor" viewBox="0 0 16 16">
+			    <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+			  </symbol>
+			  <symbol id="exclamation-triangle-fill" fill="currentColor" viewBox="0 0 16 16">
+			    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+			  </symbol>
+			</svg>
+		
+			<!-- Toast de relleno -->
+			<div class="toast bg-primary align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true">
+				<div class="d-flex">
+					<div class="toast-body">
+						<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Success:"><use xlink:href="#check-circle-fill"/></svg>
+				  		The message has been sent.
+					</div>
+				</div>
+			</div>
+			
+			<!-- Success Alert -->
+			<div class="toast bg-light align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true" id="successToast">
+				<div class="d-flex">
+					<div class="toast-body">
+						<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Success:"><use xlink:href="#check-circle-fill"/></svg>
+				  		The message has been sent.
+					</div>
+				</div>
+			</div>
+			
+			<!-- Failed Alert -->
+			<div class="toast bg-warning align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true" id="failedToast">
+				<div class="d-flex">
+					<div class="toast-body">
+						<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Failed:"><use xlink:href="#exclamation-triangle-fill"/></svg>
+				  		An error has occurred trying sent the message, please checked the data and try again.
+					</div>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>

@@ -1,0 +1,38 @@
+spring:
+    config:
+        activate:
+            on-profile: dev | test
+    datasource:
+        url: jdbc:sqlite:D:/simuladortransaccional/src/main/resources/db/jtransactionalsimulator.db
+        driverClassName: org.sqlite.JDBC
+    jpa:
+        database-platform: com.utadeo.miguelabarreram.simuladortransaccional.database.SQLiteDialect
+        hibernate:
+            ddl-auto: none
+        show-sql: false
+        properties:
+            hibernate:
+                format_sql: false
+name: dev-YAML
+environment: developing
+enabled: true
+server:
+    port: 9191
+logging:
+    level:
+        web: INFO
+
+---
+
+spring:
+    config:
+        activate:
+            on-profile: prod
+name: prod-YAML
+environment: production
+enabled: false
+server:
+    port: 9393
+logging:
+    level:
+        web: WARNING

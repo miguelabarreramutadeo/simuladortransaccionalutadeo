@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html xmlns:th="https://www.thymeleaf.org" th:lang="en-GB" th:xmllang="en-GB" class="no-js">
+	<head>
+		<title>Login</title>
+		
+		<link rel="stylesheet" type="text/css" media="all" href="../../css/bootstrap.css"/>
+		<script src="../../js/bootstrap.js"></script>
+		<meta name="theme-color" content="#7952b3">
+		<style>
+		  .bd-placeholder-img {
+			font-size: 1.125rem;
+			text-anchor: middle;
+			-webkit-user-select: none;
+			-moz-user-select: none;
+			user-select: none;
+		  }
+
+		  @media (min-width: 768px) {
+			.bd-placeholder-img-lg {
+			  font-size: 3.5rem;
+			}
+		  }
+		</style>
+		<link href="../../css/signin.css" rel="stylesheet">
+	</head>
+	<body class="text-center">
+		<main class="form-signin">
+			<form name="f" th:action="@{/login}" method="post">
+				<img class="mb-4" src="../../images/transaction.png" alt="" width="72" height="57">
+				<h1 class="h3 mb-3 fw-normal">Please Signin</h1>
+				
+				<div class="form-floating mb-1">
+					<input type="text" class="form-control" name="username" id="username" placeholder="username" required/>
+					<label for="username">Username</label>
+				</div>
+				<div class="form-floating">
+					<input type="password" class="form-control" name="password" id="password" placeholder="password" required/>
+					<label for="password">Password</label>
+				</div>
+				<div class="form-floating">
+					<div th:if="${param.error}" class="alert alert-error">Please check the data and try again if the error persists please contact with your the administrator</div>
+					<div th:if="${param.wrong}" class="alert alert-error">Wrong Information</div>
+					<div th:if="${param.blocked}" class="alert alert-error">User Blocked</div>
+					<div th:if="${param.inactive}" class="alert alert-error">User Inactive</div>
+				</div>
+				
+				<button class="w-100 btn btn-lg btn-primary" type="submit">Sign in</button>
+				<p class="mt-5 mb-3 text-muted">©2024</p>
+			</form>
+		</main>
+	</body>
+</html>

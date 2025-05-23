@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html xmlns:th="https://www.thymeleaf.org" lang="eu">
+	<head>
+		<title>ISO Templates</title>
+		
+		<link rel="shortcut icon" href="#">
+		<link rel="stylesheet" type="text/css" media="all" href="../../css/bootstrap.css"/>
+		<script src="../../js/jquery-3.6.0.min.js"></script> 
+		<script src="../../js/bootstrap.js"></script>
+		<script type="text/javascript" charset="utf8" src="../../plugins/datatables/datatables.js"></script>
+	    <link rel="stylesheet" type="text/css" href="../../plugins/datatables/datatables.css">
+	    <link rel="stylesheet" type="text/css" href="../../css/dataTables.bootstrap4.min.css">
+
+		<script>
+			
+			$(document).ready( function() {
+				$('#navBarIsoTemplates a').addClass('active');
+				
+				let isoTemplateId = -1;
+				let isoFieldData = [];
+				let currentMaxValidFieldSetted = -1;
+				
+				//TOASTS
+				let st = document.getElementById('successToast');
+				let successToast = bootstrap.Toast.getOrCreateInstance(st);
+				let ft = document.getElementById('failedToast');
+				let failedToast = bootstrap.Toast.getOrCreateInstance(ft);
+				
+				/**
+				** DATATABLE ISO TEMPLATE
+				**/
+				let isoTemplateTable = $('#isoTemplateTable').DataTable({
+					ajax: {
+						url: 'isotemplates/listTemplates',
+						type: 'GET',
+						dataSrc: 'ltObjs',
+						complete: function(data, status, jqXHR) {
+							refreshSelectBaseOn(false);
+						}
+					},
+					idSrc: 'isoTemplateId',
+					columns: [
+						{data: 'isoTemplateName'},
+						{
+							data: 'baseOn',
+							render: function(data, type, row) {
+								let baseOn = 'None';
+								if (null !== data)
+									baseOn = row.baseOn.isoTemplateName;
+								return baseOn;
+							}
+						},
+						{data: 'isoTemplateDescription'},
+						{
+							data: 'typeVisibility',
+							render: function(data, type, row) {
+								return ('U' === data) ? 'Only Me' : 'Anyone';
+							}
+						},
+						{
+							data: 'maxValidField',
+							render: function(data, type, row) {
+								return (null === data || data < 0) ? '' : data;
+							}
+						},
+						{
+							data: 'bitmapField',
+							render: function(data, type, row) {
+								return (null === data || data < 0) ? '' : data;
+							}
+						},
+						{
+							data: 'firstField',
+							render: function(data, type, row) {
+								return (null === data || data < 0) ? '' : data;
+							}
+						},
+						{
+							data: 'emitBitmap',
+							render: function(data, type, row) {
+								return (null === data) ? '' : ((data) ? 'Yes' : 'No');
+							}
+						},
+						{
+							data: 'headerLength',
+							render: function(data, type, row) {
+								return (null === data || data < 0) ? '' : data;
+							}
+						},
+						{
+							data: 'updatedBy',
+							render: function(data, type, row) {
+								return row.userId.userName;
+							}
+						},
+						{
+							data: 'lastUpdated',
+							render: function(data, type, row) {
+								if (undefined === data || null === data || '' === data)
+									return '';
+								return new Date(data).toLocaleString();
+							}
+						}
+					]
+				});
+				
+				$('#isoTemplateTable tbody').on('click', 'tr', function() {
+					currentMaxValidFieldSetted = -1;
+			        if ($(this).hasClass('selected')) {
+			            $(this).removeClass('selected');
+			            $('#editTemplate').addClass('disabled');
+			            $('#resyncTemplate').addClass('disabled');
+			            $('#addField').addClass('disabled');
+			            $('#editField').addClass('disabled');
+			            $('#removeField').addClass('disabled');
+			        } else {
+			        	isoTemplateTable.$('tr.selected').removeClass('selected');
+			            $(this).addClass('selected');
+			            $('#editTemplate').removeClass('disabled');
+			            $('#resyncTemplate').removeClass('disabled');
+			            $('#addField').removeClass('disabled');
+			            $('#editField').addClass('disabled');
+			            $('#removeField').addClass('disabled');
+			        }
+			        
+			        loadIsoFieldsData();
+			    });
+				
+				let modalTemplate = document.getElementById('templateModal');
+			    let templateModal = new bootstrap.Modal(modalTemplate);
+				let fInput = document.getElementById('templateNameModal');
+				
+				modalTemplate.addEventListener('show.bs.modal', function() {
+				  let form = $('#formTemplateModal')[0];
+				  form.classList.remove('was-validated');
+				  fInput.focus();
+				  
+				  form.reset();
+				  
+				  let button = event.relatedTarget;
+				  
+				  if (null === button || typeof button == 'undefined')
+					  return;
+				  
+				  let action = button.getAttribute('data-bs-action');
+				  let modalTitle = modalTemplate.querySelector('.modal-title');
+				  
+				  if (action === 'add') {
+					  modalTitle.textContent = "Add Template";
+					  $('#isoTemplateTable tr').removeClass('selected');
+				  } else
+					  modalTitle.textContent = "Edit Template";
+				  
+				  refreshSelectBaseOn((action !== 'add'));
+				});
+				
+				$('#editTemplate').click(function() {
+			    	let data = isoTemplateTable.row('.selected').data();
+			    	if ('undefined' === typeof data || null === data)
+			    		return;
+			    	if(null !== data.baseOn)
+			    		$('#baseOnTemplateModal').val(data.baseOn.isoTemplateId);
+			    	else 
+			    		$('#baseOnTemplateModal').val(-1);
+			    	
+			    	currentMaxValidFieldSetted = getCurrentMaxValidFieldSetted();
+			    	
+			    	if (currentMaxValidFieldSetted > -1)
+			    		$('#maxValidFieldModal').attr('min', currentMaxValidFieldSetted);
+			    	else 
+			    		$('#maxValidFieldModal').attr('min', 0);
+			    	
+			    	fillModalTemplate(data, false);
+			    });
+				
+				$('#baseOnTemplateModal').change(function() {
+					let data = isoTemplateTable.data();
+					
+					for(let i = 0; i < data.length; i++) {
+						if (data[i].isoTemplateId == $(this).val()){
+							fillModalTemplate(data[i], true);
+							return false;
+						}
+					}
+				});
+				
+				$('#btnSaveTemplateModal').click(function() {
+					let form = $('#formTemplateModal')[0];
+					if (form.checkValidity()) {
+// 						form.classList.add('was-validated');
+				    	
+						let objJson = {
+							'isoTemplateName': $('#templateNameModal').val(),
+							'isoTemplateDescription': $('#descriptionTemplateModal').val(),
+							'typeVisibility': $('#typeVisibilityTemplateModal option:selected').val(),
+							'maxValidField': getValue('maxValidFieldModal', -1),
+					    	'bitmapField': getValue('bitmapFieldModal', -1),
+					    	'firstField': getValue('firstFieldModal', -1),
+					    	'emitBitmap': $('#emitBitmapModal').val(),
+					    	'headerLength': getValue('headerLengthModal', -1)
+						}
+						
+						let data = isoTemplateTable.row('.selected').data();
+				    	if ('undefined' !== typeof data && null !== data) {
+				    		objJson['isoTemplateId'] = data.isoTemplateId;
+				    		objJson['userId'] = data.userId;
+				    	}
+				    	
+				    	if ('-1' !== $('#baseOnTemplateModal option:selected').val())
+				    		objJson['baseOn'] = {
+				    			'isoTemplateId': $('#baseOnTemplateModal option:selected').val(),
+				    			'isoTemplateName': $('#baseOnTemplateModal option:selected').text()
+			    			};
+				    	
+						$.ajax({
+							url: 'isotemplates/saveTemplate',
+							type: 'POST',
+							processData: false,
+							contentType: 'application/json',
+							dataType: 'json',
+							data: JSON.stringify(objJson),
+							complete: function(data, status, jqXHR) {
+								isoTemplateTable.ajax.reload();
+								$('#btnCloseTemplateModal').click();
+							},
+							success: function(data, status, jqXHR) {
+								successToast.show();
+							},
+							error: function(data, status, jqXHR) {
+								failedToast.show();
+							} 
+						});
+						return false;
+					}
+				});
+				
+				function getCurrentMaxValidFieldSetted() {
+					let currentMaxValidFieldSetted = -1;
+					isoTemplateFieldsTable.data().each(field => {
+						let isSubField = null !== field.isoParentField;
+			    		if (currentMaxValidFieldSetted < field.isoFieldNr && !isSubField)
+			    			currentMaxValidFieldSetted = field.isoFieldNr;
+			    	});
+					return currentMaxValidFieldSetted;
+				}
+				
+				function fillModalTemplate(data, isExtended) {
+					$('#templateNameModal').val(data.isoTemplateName + (isExtended ? '_Extended' : ''));
+			    	$('#descriptionTemplateModal').val((isExtended ? 'Extended from ' + data.isoTemplateName : '') + data.isoTemplateDescription);
+			    	$('#typeVisibilityTemplateModal').val(data.typeVisibility);
+			    	
+			    	if (0 <= data.maxValidField)
+			    		$('#maxValidFieldModal').val(data.maxValidField);
+			    	
+			    	if (0 <= data.bitmapField) {
+			    		$('#bitmapFieldModal').val(data.bitmapField);
+			    		$('#emitBitmapModal').val('' + data.emitBitmap);
+			    	}
+			    	
+			    	if (0 <= data.firstField)
+			    		$('#firstFieldModal').val(data.firstField);
+			    	
+			    	if (0 <= data.headerLength)
+			    		$('#headerLengthModal').val(data.headerLength);
+				}
+				
+				function refreshSelectBaseOn(filter) {
+					let data = isoTemplateTable.data();
+					let isoTemplateData = isoTemplateTable.row('.selected').data();
+					let rows = data.length;
+					$('#baseOnTemplateModal option').remove();
+					$('#baseOnTemplateModal').append('<option value="-1" selected>No</option>');
+					for (let i = 0; i < rows; i++){
+						let ignore = false;
+						if (filter && null !== isoTemplateData && typeof isoTemplateData !== 'undefined')
+							if (data[i].isoTemplateId === isoTemplateData.isoTemplateId)
+								ignore = true;
+						
+						if (!ignore)
+							$('#baseOnTemplateModal').append('<option value="' + data[i].isoTemplateId + '">' + data[i].isoTemplateName + '</option>');
+					}
+				}
+				
+				/**
+				** DATATABLE ISO FIELD TEMPLATE
+				**/
+				isoTemplateFieldsTable = $('#isoTemplateFields').DataTable({
+					ajax: {
+						url: '/isofields/getTemplateFields',
+						type: 'GET',
+						dataSrc: 'ltObjs',
+						data: function(d) {
+							d.isoTemplateId = isoTemplateId
+						}
+					},
+					idSrc: 'isoFieldId',
+					columns: [
+						{
+							data: 'isoFieldNr',
+							render: function(data, type, row) {
+								return addLabel(row);
+							}
+						},
+						{data: 'isoFieldName'},
+						{data: 'isoFieldClass'},
+						{data: 'isoFieldLength'},
+						{data: 'isoFieldPad'},
+						{data: 'isoFieldTypePad'},
+						{data: 'isoHasSubFields'}
+					]
+				});
+				
+				$('#isoTemplateFields tbody').on('click', 'tr', function() {
+			        if ($(this).hasClass('selected')) {
+			            $(this).removeClass('selected');
+			            $('#editField').addClass('disabled');
+			            $('#removeField').addClass('disabled');
+			        } else {
+			        	isoTemplateFieldsTable.$('tr.selected').removeClass('selected');
+			            $(this).addClass('selected');
+			            $('#editField').removeClass('disabled');
+			            $('#removeField').removeClass('disabled');
+			        }
+			    });
+				
+				let modalFields = document.getElementById('fieldsModal');
+			    let fieldsModal = new bootstrap.Modal(modalFields);
+				let fFieldInput = document.getElementById('isoFieldNrModal');
+				
+				modalFields.addEventListener('show.bs.modal', function() {				
+				  $('#divHasSubFields').addClass('d-none');
+				  $('#divNoHasSubFields').addClass('d-none');
+				
+				  let form = $('#formFieldsModal')[0];
+				  form.classList.remove('was-validated');
+				  fFieldInput.focus();
+				  
+				  form.reset();
+				  
+				  let button = event.relatedTarget;
+				  
+				  if (null === button || typeof button == 'undefined')
+					  return;
+				  
+				  let action = button.getAttribute('data-bs-action');
+				  let modalTitle = modalFields.querySelector('.modal-title');
+				  
+				  if (action === 'add') {
+				  	  isoTemplateFieldsTable.$('tr.selected').removeClass('selected');
+					  modalTitle.textContent = "Add Field";
+				  } else
+					  modalTitle.textContent = "Edit Field";
+				  
+				  refreshSelectParentField((action !== 'add'));
+				});
+				
+				$('#isoHasSubFieldsModal').change(function() {
+					let selection = $('#isoHasSubFieldsModal option:selected').val() + '';
+					
+					if (selection === '') {
+						$('#divHasSubFields').addClass('d-none');
+						$('#divNoHasSubFields').addClass('d-none');
+					} else if (selection === 'true') {
+						$('#divHasSubFields').removeClass('d-none');
+						$('#divNoHasSubFields').addClass('d-none');
+						changeRequiredHasSubFields(true);
+					} else if (selection === 'false'){
+						$('#divHasSubFields').addClass('d-none');
+						$('#divNoHasSubFields').removeClass('d-none');
+						changeRequiredHasSubFields(false);
+					}
+				});
+				
+				$('#btnSaveFieldTemplateModal').click(function() {
+					let form = $('#formFieldsModal')[0];
+					if (form.checkValidity()) {
+						let field = isoTemplateFieldsTable.row('.selected').data();
+						let isoTemplate = isoTemplateTable.row('.selected').data();
+						let objJson = {};
+	
+						if ('undefined' === typeof field || null == field)
+				    		objJson = {
+								'isoFieldPad': false,
+								'isoEmitBitmap': false,
+								'isoMaxValidField': 0,
+								'isoBitmapField': 0,
+								'isoFirstField': 0,
+								'isoHeaderLength': 0,
+								'isoFieldTypePad': ''
+							};
+						else 
+							objJson = field;
+	
+						if (objJson.isoHasSubFields) {
+							objJson.isoEmitBitmap = $('#isoEmitBitmapModal option:selected').val();
+							objJson.isoMaxValidField = $('#isoMaxValidFieldModal').val();
+							objJson.isoBitmapField = $('#isoBitmapFieldModal').val();
+							objJson.isoFirstField = $('#isoFirstFieldModal').val();
+							objJson.isoHeaderLength = $('#isoHeaderLengthModal').val();
+						} else {
+							objJson.isoFieldPad = $('#isoFieldPadModal option:selected').val();
+							objJson.isoFieldTypePad = $('#isoFieldTypePadModal option:selected').val();
+							if ('' !== $('#isoParentFieldModal option:selected').val() && typeof $('#isoParentFieldModal option:selected').val() !== 'undefined')
+								objJson.isoParentField = $.parseJSON($('#isoParentFieldModal option:selected').attr('dataJsonValue'));
+						}
+						
+						objJson.isoTemplateId = isoTemplate;
+						objJson.isoFieldNr = $('#isoFieldNrModal').val();
+						objJson.isoFieldName = $('#isoFieldNameModal').val();
+						objJson.isoFieldClass = $('#isoFieldClassModal option:selected').val();
+						objJson.isoFieldLength = $('#isoFieldLengthModal').val();
+						objJson.isoHasSubFields = $('#isoHasSubFieldsModal option:selected').val();
+						
+						$.ajax({
+							url: '/isofields/saveField',
+							type: 'POST',
+							processData: false,
+							contentType: 'application/json',
+							dataType: 'json',
+							data: JSON.stringify(objJson),
+							complete: function(data, status, jqXHR) {
+								loadIsoFieldsData();
+								$('#btnCloseFieldsModal').click();
+							},
+							success: function(data, status, jqXHR) {
+								successToast.show();
+							},
+							error: function(data, status, jqXHR) {
+								failedToast.show();
+							} 
+						});
+						return false;
+					}
+				});
+				
+				$('#removeField').click(function() {
+					let field = isoTemplateFieldsTable.row('.selected').data();
+
+			    	if ('undefined' === typeof field || null === field)
+			    		return;
+
+			    	let isoTemplate = isoTemplateTable.row('.selected').data();
+					field.isoTemplateId = isoTemplate;
+					console.log(field);
+			    	
+			    	$.ajax({
+			    		url: '/isofields/removeField',
+			    		type: 'DELETE',
+			    		processData: false, 
+			    		contentType: 'application/json',
+			    		dataType: 'json',
+			    		data: JSON.stringify(
+			    			field
+			    		),
+						complete: function(data, status, jqXHR) {
+							$('#removeField').addClass('disabled');
+							loadIsoFieldsData();
+			    			successToast.show();
+						}
+			    	});
+				});
+				
+				$('#editField').click(function(){
+					let field = isoTemplateFieldsTable.row('.selected').data();
+
+			    	if (undefined === field || null === field)
+			    		return;
+			    	
+			    	$('#isoFieldNrModal').val(field.isoFieldNr);
+			    	$('#isoFieldNameModal').val(field.isoFieldName);
+			    	$('#isoFieldClassModal').val(field.isoFieldClass); 
+			    	$('#isoFieldLengthModal').val(field.isoFieldLength);
+			    	$('#isoHasSubFieldsModal').val('' + field.isoHasSubFields);
+			    	$('#isoHasSubFieldsModal').change();
+			    	
+			    	let maxFieldNr = getCurrentMaxValidFieldSetted();
+			    	if (maxFieldNr > 0)
+		    			$('#isoFieldNrModal').attr('max', maxFieldNr);
+			    	
+			    	if (field.isoHasSubFields) {
+			    		$('#isoEmitBitmapModal').val('' + field.isoEmitBitmap);
+			    		$('#isoMaxValidFieldModal').val(field.isoMaxValidField);
+			    		$('#isoMaxValidFieldModal').attr('min', getSubFieldSetted());
+			    		$('#isoBitmapFieldModal').val(field.isoBitmapField);
+			    		$('#isoFirstFieldModal').val(field.isoFirstField);
+			    		$('#isoHeaderLengthModal').val(field.isoHeaderLength);
+			    	} else if (null !== field.isoParentField){
+			    		$('#isoParentFieldModal').val(field.isoParentField.isoFieldId);
+
+			    		maxFieldNr = getCurrentMaxValidSubFieldSetted();
+			    		if (maxFieldNr > 0)
+			    			$('#isoFieldNrModal').attr('max', maxFieldNr);
+			    	}
+		    		$('#isoFieldPadModal').val('' + field.isoFieldPad);
+		    		$('#isoFieldTypePadModal').val(field.isoFieldTypePad);
+				});
+				
+				$('#isoParentFieldModal').change(function() {
+	    			$('#isoFieldNrModal').attr('max', 0);
+					if('' !== $(this).val()) {
+						let maxFieldNr = getCurrentMaxValidSubFieldSetted();
+			    		if (maxFieldNr > 0)
+			    			$('#isoFieldNrModal').attr('max', maxFieldNr);
+					} else {
+						let maxFieldNr = getCurrentMaxValidFieldSetted();
+				    	if (maxFieldNr > 0)
+			    			$('#isoFieldNrModal').attr('max', maxFieldNr);
+					}
+				});
+				
+				$('#resyncTemplate').click(function() {
+					let template = isoTemplateTable.row('.selected').data();
+					
+					if (null === template || undefined === template || typeof template === 'undefined')
+						return;
+					
+					$.ajax({
+						url: '/isotemplates/resyncTemplate',
+						type: 'POST',
+						processData: false,
+						contentType: 'application/json',
+						dataType: 'json',
+						data: JSON.stringify(template),
+						complete: function(data, status, jqXHR) {
+							$('#resyncTemplate').addClass('disabled');
+			    			successToast.show();
+						}
+					});
+				});
+				
+				function loadIsoFieldsData() {
+					let isoTemplateData = isoTemplateTable.row('.selected').data();
+					if (null !== isoTemplateData && typeof isoTemplateData !== 'undefined')
+						isoTemplateId = isoTemplateData.isoTemplateId;
+					else 
+						isoTemplateId = -1;
+					isoTemplateFieldsTable.ajax.reload();
+				}
+				
+				function refreshSelectParentField(filter) {
+					let data = isoTemplateFieldsTable.data();
+					let selected = isoTemplateFieldsTable.row('.selected').data();
+					let rows = data.length;
+					$('#isoParentFieldModal option').remove();
+					$('#isoParentFieldModal').append('<option selected></option>');
+					for (let i = 0; i < rows; i++){
+						let ignore = false;
+						if (filter && null !== selected && typeof selected !== 'undefined')
+							if (data[i].isoFieldNr === selected.isoFieldNr)
+								ignore = true;
+						if (!data[i].isoHasSubFields)
+							ignore = true;
+						
+						if (!ignore)
+							$('#isoParentFieldModal').append('<option value="' + data[i].isoFieldId + '" dataJsonValue=\'' + JSON.stringify(data[i]) + '\'>' + addLabel(data[i]) + ' - ' + data[i].isoFieldName + '</option>');
+					}
+				}
+				
+				function getValue(elementId, defaultValue) {
+					let value = $('#' + elementId).val();
+					if (typeof value !== 'undefined' && value !== '')
+						return value;
+					else 
+						return defaultValue;	
+				}
+				
+				function canAddField(resetModalField) {
+					let isoTemplateSelected = isoTemplateTable.row('.selected').data();
+					let maxValidField = isoTemplateSelected.maxValidField;
+					let currentMaxValidField = getCurrentMaxValidFieldSetted();
+					let isPossible = true;
+					
+					if (maxValidField <= currentMaxValidField)
+						isPossible = false;
+					
+					if (resetModalField)
+						$('#isoMaxValidFieldModal').val('');
+					
+					return isPossible;
+				}
+				
+				function getCurrentMaxValidSubFieldSetted() {
+					let currentMaxValidFieldSetted = -1;
+					let parentField = $.parseJSON($('#isoParentFieldModal option:selected').attr('dataJsonValue'));
+					if (parentField !== null && typeof parentField !== 'undefined' && parentField !== '' )
+						currentMaxValidFieldSetted = parentField.isoMaxValidField;
+					return currentMaxValidFieldSetted;
+				}
+				
+				function getSubFieldSetted() {
+					let field = isoTemplateFieldsTable.row('.selected').data();
+					if (null !== field && typeof field !== 'undefined') {
+						if (field.isoHasSubFields) {
+							let totalSubFields = 0;
+							let maxField = -1;
+							isoTemplateFieldsTable.rows().data().each(function(subField) {
+							    if (null !== subField.isoParentField) {
+							        if (field.isoFieldNr == subField.isoParentField.isoFieldNr) {
+							            if (subField.isoFieldNr > maxField){
+							            	maxField = subField.isoFieldNr;
+							            }
+							            totalSubFields++;
+							        }
+							    }
+							});
+							if (maxField > totalSubFields)
+								totalSubFields = maxField;
+							return totalSubFields;
+						}
+					}
+				}
+				
+				$('#isoFieldPadModal').change(function() {
+					if ('true' == $('#isoFieldPadModal option:selected').val()){
+						$('#isoFieldTypePadModal').attr('required', true);
+					} else {
+						$('#isoFieldTypePadModal').attr('required', false);
+						$('#isoFieldTypePadModal').val('');
+					}
+				});
+				
+				function changeRequiredHasSubFields(requiredHasSubFields) {
+					$('#isoEmitBitmapModal').attr('required', requiredHasSubFields);
+					$('#isoFieldPadModal').attr('required', !requiredHasSubFields);
+				}
+
+				function addLabel(isoField) {
+					let label = '';
+					if (null !== isoField.isoParentField) {
+						let parent = isoField.isoParentField;
+						label = addLabel(parent) + '.' + (isoField.isoFieldNr + '').padStart(howManyZerosAdd(parent.isoMaxValidField), "0");
+					} else {
+						let template = isoField.isoTemplateId;
+						label = (isoField.isoFieldNr + '').padStart(howManyZerosAdd(template.maxValidField), "0");
+					}
+					return label;
+				}
+				
+				function howManyZerosAdd(n) {
+				    let zerosCount = 0;
+				    let isDivisible = true;
+				    while(isDivisible) {
+				        if ((n / Math.pow(10, zerosCount)) >= 1) {
+				            zerosCount++;
+				        } else {
+				            isDivisible = false;
+				        }
+				    }
+				    return zerosCount;
+				}
+			} );
+			let myConsole = {};
+		</script>
+		<style></style>
+	</head>
+	<body>
+		<div th:replace="~{/menu}">&nbsp;</div>
+		<main class="col-md-9 ms-sm-auto col-lg-10 px-md-0">
+			<div class="card">
+				<div class="card-header">ISO Templates</div>
+				<div class="card-body">
+					<table id="isoTemplateTable" class="table table-striped table-hover">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Base On</th>
+								<th>Description</th>
+								<th>Type Visibility</th>
+								<th>Max Valid Field</th>
+								<th>Bitmap Field</th>
+								<th>First Field</th>
+								<th>Emit Bitmap</th>
+								<th>Header Length</th>
+								<th>Updated By</th>
+								<th>Last Updated</th>
+							</tr>
+						</thead>
+					</table>
+					<div class="btn-group" role="group" aria-label="Options">
+						<button type="button" class="btn btn-outline-secondary" id="addTemplate" data-bs-toggle="modal" data-bs-target="#templateModal" data-bs-action="add">Add New ISO Template</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="editTemplate" data-bs-toggle="modal" data-bs-target="#templateModal" data-bs-action="edit">Edit Template</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="resyncTemplate">Resync Template</button>
+					</div>
+				</div>
+			</div>
+			<br/>
+			<div class="card">
+				<div class="card-header">ISO Template's fields</div>
+				<div class="card-body">
+					<table id="isoTemplateFields" class="table table-striped table-hover">
+						<thead>
+							<tr>
+								<th>Field</th>
+								<th>Name</th>
+								<th>Type</th>
+								<th>Length</th>
+								<th>Pad</th>
+								<th>Type Pad</th>
+								<th>Has Subfields?</th>
+							</tr>
+						</thead>
+					</table>
+					<div class="btn-group" role="group" aria-label="Options">
+						<button type="button" class="btn btn-outline-secondary disabled" id="addField" data-bs-toggle="modal" data-bs-target="#fieldsModal" data-bs-action="add">Add New Field</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="editField" data-bs-toggle="modal" data-bs-target="#fieldsModal" data-bs-action="edit">Edit Field</button>
+						<button type="button" class="btn btn-outline-secondary disabled" id="removeField">Delete Field</button>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Modals -->
+			<!-- ISO Template Modal -->
+			<div class="modal face" id="templateModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="ISO Template Modal" aria-hidden="true">
+				<div class="modal-dialog">
+					<div class="modal-content">
+						<form id="formTemplateModal">
+							<div class="modal-header">
+								<h5 class="modal-title" id="titleTemplateModal"></h5>
+								<button type="button" id="btnCloseTemplateModal" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+							</div>
+							<div class="modal-body">
+									<div class="mb-3">
+										<label for="baseOnTemplateModal" class="col-form-label">Base On:</label>
+										<select class="form-select" id="baseOnTemplateModal" required></select>
+										<div class="invalid-feedback">
+											Please choose a Base on.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="templateNameModal" class="col-form-label">Template Name:</label>
+										<input type="text" class="form-control" id="templateNameModal" required>
+										<div class="invalid-feedback">
+											Please choose a Template Name.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="descriptionTemplateModal" class="col-form-label">Description:</label>
+										<textarea class="form-control" id="descriptionTemplateModal" rows="3"></textarea>
+									</div>
+									<div class="mb-3">
+										<label for="typeVisibilityTemplateModal" class="col-form-label">Type Visibility:</label>
+										<select class="form-select" id="typeVisibilityTemplateModal" required>
+											<option selected></option>
+											<option value="A">Anyone</option>
+											<option value="U">Only me</option>
+										</select>
+										<div class="invalid-feedback">
+											Please choose a Type Visibility.
+										</div>
+									</div>
+									<div class="accordion accordion-flush" id="modalAccordion">
+										<div class="accordion-item">
+											<h2 class="accordion-header" id="headingOne">
+												<button id="btnCollapse" class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">More Options</button>
+											</h2>
+											<div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#modalAccordion">
+												<div class="accordion-body">
+													<div class="mb-3">
+														<label for="maxValidFieldModal" class="col-form-label">Max Valid Field:</label>
+														<input type="number" min="0" class="form-control" id="maxValidFieldModal">
+													</div>
+													<div class="mb-3">
+														<label for="bitmapFieldModal" class="col-form-label">Bitmap Field:</label>
+														<input type="number" min="0" class="form-control" id="bitmapFieldModal">
+													</div>
+													<div class="mb-3">
+														<label for="firstFieldModal" class="col-form-label">First Field:</label>
+														<input type="number" min="0" class="form-control" id="firstFieldModal">
+													</div>
+													<div class="mb-3">
+														<label for="emitBitmapModal" class="col-form-label">Emit Bitmap:</label>
+														<select class="form-select" id="emitBitmapModal">
+															<option selected></option>
+															<option value="true">Yes</option>
+															<option value="false">No</option>
+														</select>
+													</div>
+													<div class="mb-3">
+														<label for="headerLengthModal" class="col-form-label">Header Length:</label>
+														<input type="number" min="0" class="form-control" id="headerLengthModal">
+													</div>
+												</div>
+											</div>
+										</div>
+									</div>
+							</div>
+							<div class="modal-footer">
+								<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+								<button type="submit" class="btn btn-primary" id="btnSaveTemplateModal">Save</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+			
+			<!-- ISO Fields Modal -->
+			<div class="modal face" id="fieldsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="ISO Field Modal" aria-hidden="true">
+				<div class="modal-dialog">
+					<div class="modal-content">
+						<form id="formFieldsModal">
+							<div class="modal-header">
+								<h5 class="modal-title" id="titleFieldsModal"></h5>
+								<button type="button" id="btnCloseFieldsModal" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+							</div>
+							<div class="modal-body">
+									<div class="mb-3">
+										<label for="isoParentFieldModal" class="col-form-label">Parent Field:</label>
+										<select class="form-control" id="isoParentFieldModal"></select>
+									</div>
+									<div class="mb-3">
+										<label for="isoFieldNrModal" class="col-form-label">Field Number:</label>
+										<input type="number" min="0" class="form-control" id="isoFieldNrModal" required>
+										<div class="invalid-feedback">
+											Please provide a Field Number.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="isoFieldNameModal" class="col-form-label">Field Name:</label>
+										<input type="text" class="form-control" id="isoFieldNameModal" required>
+										<div class="invalid-feedback">
+											Please choose a Field Name.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="isoFieldClassModal" class="col-form-label">Field Class:</label>
+										<select class="form-select" id="isoFieldClassModal" required>
+											<option></option>
+											<option value="org.jpos.iso.IF_CHAR">IF_CHAR</option>
+											<option value="org.jpos.iso.IF_NOP">IF_NOP</option>
+											<option value="org.jpos.iso.IF_TBASE">IF_TBASE</option>
+											<option value="org.jpos.iso.IF_TCHAR">IF_TCHAR</option>
+											<option value="org.jpos.iso.IFA_AMOUNT">IFA_AMOUNT</option>
+											<option value="org.jpos.iso.IFA_BINARY">IFA_BINARY</option>
+											<option value="org.jpos.iso.IFA_BITMAP">IFA_BITMAP</option>
+											<option value="org.jpos.iso.IFA_FLLCHAR">IFA_FLLCHAR</option>
+											<option value="org.jpos.iso.IFA_FLLNUM">IFA_FLLNUM</option>
+											<option value="org.jpos.iso.IFA_LBINARY">IFA_LBINARY</option>
+											<option value="org.jpos.iso.IFA_LCHAR">IFA_LCHAR</option>
+											<option value="org.jpos.iso.IFA_LLBINARY">IFA_LLBINARY</option>
+											<option value="org.jpos.iso.IFA_LLBNUM">IFA_LLBNUM</option>
+											<option value="org.jpos.iso.IFA_LLCHAR">IFA_LLCHAR</option>
+											<option value="org.jpos.iso.IFA_LLLABINARY">IFA_LLLABINARY</option>
+											<option value="org.jpos.iso.IFA_LLLBINARY">IFA_LLLBINARY</option>
+											<option value="org.jpos.iso.IFA_LLLCHAR">IFA_LLLCHAR</option>
+											<option value="org.jpos.iso.IFA_LLLLBINARY">IFA_LLLLBINARY</option>
+											<option value="org.jpos.iso.IFA_LLLLCHAR">IFA_LLLLCHAR</option>
+											<option value="org.jpos.iso.IFA_LLLLLBINARY">IFA_LLLLLBINARY</option>
+											<option value="org.jpos.iso.IFA_LLLLLCHAR">IFA_LLLLLCHAR</option>
+											<option value="org.jpos.iso.IFA_LLLLLLBINARY">IFA_LLLLLLBINARY</option>
+											<option value="org.jpos.iso.IFA_LLLLLLCHAR">IFA_LLLLLLCHAR</option>
+											<option value="org.jpos.iso.IFA_LLNUM">IFA_LLNUM</option>
+											<option value="org.jpos.iso.IFA_LLLNUM">IFA_LLLNUM</option>
+											<option value="org.jpos.iso.IFA_NUMERIC">IFA_NUMERIC</option>
+											<option value="org.jpos.iso.IFA_TTLBINARY">IFA_TTLBINARY</option>
+											<option value="org.jpos.iso.IFA_TTLCHAR">IFA_TTLCHAR</option>
+											<option value="org.jpos.iso.IFA_TTLLBINARY">IFA_TTLLBINARY</option>
+											<option value="org.jpos.iso.IFA_TTLLCHAR">IFA_TTLLCHAR</option>
+											<option value="org.jpos.iso.IFA_TTLLLBINARY">IFA_TTLLLBINARY</option>
+											<option value="org.jpos.iso.IFA_TTLLLCHAR">IFA_TTLLLCHAR</option>
+											<option value="org.jpos.iso.IFA_TTLLLLBINARY">IFA_TTLLLLBINARY</option>
+											<option value="org.jpos.iso.IFA_TTLLLLCHAR">IFA_TTLLLLCHAR</option>
+											<option value="org.jpos.iso.IFA_TTTLLLCHAR">IFA_TTTLLLCHAR</option>
+											<option value="org.jpos.iso.IFAE_LLCHAR">IFAE_LLCHAR</option>
+											<option value="org.jpos.iso.IFB_AMOUNT">IFB_AMOUNT</option>
+											<option value="org.jpos.iso.IFB_BINARY">IFB_BINARY</option>
+											<option value="org.jpos.iso.IFB_BITMAP">IFB_BITMAP</option>
+											<option value="org.jpos.iso.IFB_FLLLNUM">IFB_FLLLNUM</option>
+											<option value="org.jpos.iso.IFB_FLLNUM">IFB_FLLNUM</option>
+											<option value="org.jpos.iso.IFB_FNUMERIC">IFB_FNUMERIC</option>
+											<option value="org.jpos.iso.IFB_HEX">IFB_HEX</option>
+											<option value="org.jpos.iso.IFB_LLBINARY">IFB_LLBINARY</option>
+											<option value="org.jpos.iso.IFB_LLCHAR">IFB_LLCHAR</option>
+											<option value="org.jpos.iso.IFB_LLHBINARY">IFB_LLHBINARY</option>
+											<option value="org.jpos.iso.IFB_LLHCHAR">IFB_LLHCHAR</option>
+											<option value="org.jpos.iso.IFB_LLHECHAR">IFB_LLHECHAR</option>
+											<option value="org.jpos.iso.IFB_LLHEX">IFB_LLHEX</option>
+											<option value="org.jpos.iso.IFB_LLHFBINARY">IFB_LLHFBINARY</option>
+											<option value="org.jpos.iso.IFB_LLHNUM">IFB_LLHNUM</option>
+											<option value="org.jpos.iso.IFB_LLLBINARY">IFB_LLLBINARY</option>
+											<option value="org.jpos.iso.IFB_LLLCHAR">IFB_LLLCHAR</option>
+											<option value="org.jpos.iso.IFB_LLLHBINARY">IFB_LLLHBINARY</option>
+											<option value="org.jpos.iso.IFB_LLLHCHAR">IFB_LLLHCHAR</option>
+											<option value="org.jpos.iso.IFB_LLLHECHAR">IFB_LLLHECHAR</option>
+											<option value="org.jpos.iso.IFB_LLLHNUM">IFB_LLLHNUM</option>
+											<option value="org.jpos.iso.IFB_LLLLBINARY">IFB_LLLLBINARY</option>
+											<option value="org.jpos.iso.IFB_LLLLCHAR">IFB_LLLLCHAR</option>
+											<option value="org.jpos.iso.IFB_LLLNUM">IFB_LLLNUM</option>
+											<option value="org.jpos.iso.IFB_LLNUM">IFB_LLNUM</option>
+											<option value="org.jpos.iso.IFB_NUMERIC">IFB_NUMERIC</option>
+											<option value="org.jpos.iso.IFE_AMOUNT">IFE_AMOUNT</option>
+											<option value="org.jpos.iso.IFE_BINARY">IFE_BINARY</option>
+											<option value="org.jpos.iso.IFE_BITMAP">IFE_BITMAP</option>
+											<option value="org.jpos.iso.IFE_CHAR">IFE_CHAR</option>
+											<option value="org.jpos.iso.IFE_LBINARY">IFE_LBINARY</option>
+											<option value="org.jpos.iso.IFE_LCHAR">IFE_LCHAR</option>
+											<option value="org.jpos.iso.IFE_LLBINARY">IFE_LLBINARY</option>
+											<option value="org.jpos.iso.IFE_LLCHAR">IFE_LLCHAR</option>
+											<option value="org.jpos.iso.IFE_LLLBINARY">IFE_LLLBINARY</option>
+											<option value="org.jpos.iso.IFE_LLLCHAR">IFE_LLLCHAR</option>
+											<option value="org.jpos.iso.IFE_LLLEBINARY">IFE_LLLEBINARY</option>
+											<option value="org.jpos.iso.IFE_LLLLBINARY">IFE_LLLLBINARY</option>
+											<option value="org.jpos.iso.IFE_LLLLCHAR">IFE_LLLLCHAR</option>
+											<option value="org.jpos.iso.IFE_LLLNUM">IFE_LLLNUM</option>
+											<option value="org.jpos.iso.IFE_LLNUM">IFE_LLNUM</option>
+											<option value="org.jpos.iso.IFE_LNUM">IFE_LNUM</option>
+											<option value="org.jpos.iso.IFE_NUMERIC">IFE_NUMERIC</option>
+											<option value="org.jpos.iso.IFE_SIGNED_NUMERIC">IFE_SIGNED_NUMERIC</option>
+											<option value="org.jpos.iso.IFEA_LLCHAR">IFEA_LLCHAR</option>
+											<option value="org.jpos.iso.IFEB_LLLNUM">IFEB_LLLNUM</option>
+											<option value="org.jpos.iso.IFEB_LLNUM">IFEB_LLNUM</option>
+											<option value="org.jpos.iso.IFELPE_LLLCHAR">IFELPE_LLLCHAR</option>
+											<option value="org.jpos.iso.IFEMC_LLCHAR">IFEMC_LLCHAR</option>
+											<option value="org.jpos.iso.IFEMC_LLLCHAR">IFEMC_LLLCHAR</option>
+											<option value="org.jpos.iso.IFEMC_TCC">IFEMC_TCC</option>
+											<option value="org.jpos.iso.IFEP_LLCHAR">IFEP_LLCHAR</option>
+											<option value="org.jpos.iso.IFEP_LLLBINARY">IFEP_LLLBINARY</option>
+											<option value="org.jpos.iso.IFEP_LLLCHAR">IFEP_LLLCHAR</option>
+											<option value="org.jpos.iso.IFEPE_LLCHAR">IFEPE_LLCHAR</option>
+											<option value="org.jpos.iso.IFEPE_LLLCHAR">IFEPE_LLLCHAR</option>
+											<option value="org.jpos.iso.IFIPM_LLLCHAR">IFIPM_LLLCHAR</option>
+											<option value="org.jpos.iso.IFMC_LLBINARY">IFMC_LLBINARY</option>
+											<option value="org.jpos.iso.IFMC_LLCHAR">IFMC_LLCHAR</option>
+											<option value="org.jpos.iso.IFMC_LLLBINARY">IFMC_LLLBINARY</option>
+											<option value="org.jpos.iso.IFMC_LLLCHAR">IFMC_LLLCHAR</option>
+											<option value="org.jpos.iso.IFMC_TCC">IFMC_TCC</option>
+										</select>
+										<div class="invalid-feedback">
+											Please choose a Field Class.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="isoFieldLengthModal" class="col-form-label">Length:</label>
+										<input type="number" min="1" class="form-control" id="isoFieldLengthModal" required>
+										<div class="invalid-feedback">
+											Please provide a Length.
+										</div>
+									</div>
+									<div class="mb-3">
+										<label for="isoHasSubFieldsModal" class="col-form-label">Has Subfields?</label>
+										<select class="form-select" id="isoHasSubFieldsModal" required>
+											<option selected></option>
+											<option value="true">Yes</option>
+											<option value="false">No</option>
+										</select>
+										<div class="invalid-feedback">
+											Please choose if has subfields.
+										</div>
+									</div>
+									<div class="d-none" id="divNoHasSubFields">
+										<div class="mb-3">
+											<label for="isoFieldPadModal" class="col-form-label">Padding?</label>
+											<select class="form-select" id="isoFieldPadModal" required>
+												<option selected></option>
+												<option value="true">Yes</option>
+												<option value="false">No</option>
+											</select>
+											<div class="invalid-feedback">
+												Please choose if has Padding.
+											</div>
+										</div>
+										<div class="mb-3">
+											<label for="isoFieldTypePadModal" class="col-form-label">Type Padding</label>
+											<select class="form-select" id="isoFieldTypePadModal" required>
+												<option selected></option>
+												<option value="L">Left</option>
+												<option value="R">Right</option>
+											</select>
+											<div class="invalid-feedback">
+												Please choose the Type Padding.
+											</div>
+										</div>
+									</div>
+									<div class="d-none" id="divHasSubFields">
+										<div class="mb-3">
+											<label for="isoEmitBitmapModal" class="col-form-label">Emit Bitmap:</label>
+											<select class="form-select" id="isoEmitBitmapModal" required>
+												<option selected></option>
+												<option value="true">Yes</option>
+												<option value="false">No</option>
+											</select>
+										</div>
+										<div class="mb-3">
+											<label for="isoMaxValidFieldModal" class="col-form-label">Max Valid Field:</label>
+											<input type="number" min="0" class="form-control" id="isoMaxValidFieldModal">
+										</div>
+										<div class="mb-3">
+											<label for="isoBitmapFieldModal" class="col-form-label">Bitmap Field:</label>
+											<input type="number" min="0" class="form-control" id="isoBitmapFieldModal">
+										</div>
+										<div class="mb-3">
+											<label for="isoFirstFieldModal" class="col-form-label">First Field:</label>
+											<input type="number" min="0" class="form-control" id="isoFirstFieldModal">
+										</div>
+										<div class="mb-3">
+											<label for="isoHeaderLengthModal" class="col-form-label">Header Length:</label>
+											<input type="number" min="0" class="form-control" id="isoHeaderLengthModal">
+										</div>
+									</div>
+							</div>
+							<div class="modal-footer">
+								<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+								<button type="submit" class="btn btn-primary" id="btnSaveFieldTemplateModal">Save</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+			
+			<!-- OBSERVACION
+			Contemplar dejar los Toast en el home con un atributo variable para customizar los mensajes
+			 -->
+			<!-- Toast -->
+			<div class="toast-container position-absolute p-3 top-0 end-0" id="toastPlacement">
+				<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+				  <symbol id="check-circle-fill" fill="currentColor" viewBox="0 0 16 16">
+				    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+				  </symbol>
+				  <symbol id="info-fill" fill="currentColor" viewBox="0 0 16 16">
+				    <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+				  </symbol>
+				  <symbol id="exclamation-triangle-fill" fill="currentColor" viewBox="0 0 16 16">
+				    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+				  </symbol>
+				</svg>
+			
+				<!-- Toast de relleno -->
+				<div class="toast bg-primary align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true">
+					<div class="d-flex">
+						<div class="toast-body">
+							<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Success:"><use xlink:href="#check-circle-fill"/></svg>
+					  		The Template's information has been saved.
+						</div>
+					</div>
+				</div>
+				
+				<!-- Success Alert -->
+				<div class="toast bg-light align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true" id="successToast">
+					<div class="d-flex">
+						<div class="toast-body">
+							<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Success:"><use xlink:href="#check-circle-fill"/></svg>
+					  		The Template's information has been saved.
+						</div>
+					</div>
+				</div>
+				
+				<!-- Failed Alert -->
+				<div class="toast bg-warning align-items-center top-0" role="alert" aria-live="assertive" aria-atomic="true" id="failedToast">
+					<div class="d-flex">
+						<div class="toast-body">
+							<svg class="bi flex-shrink-0 me-2" width="24" height="24" role="img" aria-label="Failed:"><use xlink:href="#exclamation-triangle-fill"/></svg>
+					  		An error has occurred trying saved the Template, please checked the data and try again.
+						</div>
+					</div>
+				</div>
+			</div>
+		</main>
+	</body>
+</html>
